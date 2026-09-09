@@ -58,7 +58,7 @@ publishing {
     publications {
         create<MavenPublication>("maven") {
             groupId = "net.swofty"
-            artifactId = "AtlasRedisAPI"
+            artifactId = "atlasredisapi"
             from(components["java"])
             pom {
                 name.set("AtlasRedisAPI")
