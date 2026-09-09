@@ -3,6 +3,7 @@ package net.swofty.redisapi.api;
 import lombok.AccessLevel;
 import lombok.NonNull;
 import lombok.experimental.FieldDefaults;
+import net.swofty.redisapi.api.requests.DataRequest;
 import net.swofty.redisapi.api.requests.DataStreamListener;
 import net.swofty.redisapi.events.EventRegistry;
 import net.swofty.redisapi.events.RedisMessagingReceiveEvent;
@@ -21,7 +22,6 @@ import redis.clients.jedis.JedisPubSub;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -34,7 +34,7 @@ public class RedisAPI {
     private static final String REDIS_URI_PATTERN = "rediss?://[\\w.-]+:\\d+";
     private static final Duration DEFAULT_REDIS_TIMEOUT = Duration.ofSeconds(2);
 
-    private final ExecutorService executorService = Executors.newCachedThreadPool();
+    private final ExecutorService executorService = RedisExecutors.PUBLISHER;
 
     @Getter
     private static RedisAPI instance = null;
@@ -172,10 +172,10 @@ public class RedisAPI {
      */
     public void startListeners() {
         try {
-            registerChannel("internal-data-request", DataStreamListener.class);
+            registerChannel(DataRequest.CHANNEL, DataStreamListener.class);
         } catch (ChannelAlreadyRegisteredException ignored) {
             System.out.println("[WARNING]: The internal data request channel has already been registered. This will cause issues if you are using the DataRequest API along with the Redis API." +
-                    "\n Channel Name: internal-data-request");
+                    "\n Channel Name: " + DataRequest.CHANNEL);
         }
 
         // Don't start multiple subscriber threads.
@@ -200,7 +200,7 @@ public class RedisAPI {
                 EventRegistry.pubSub = new JedisPubSub() {
                     @Override
                     public void onMessage(String channel, String message) {
-                        EventRegistry.handleAll(channel, message);
+                        EventRegistry.dispatch(channel, message);
                     }
                 };
 
@@ -224,7 +224,11 @@ public class RedisAPI {
     }
 
     /**
-     * Stops the Pub/Sub listener thread (if running), closes the pool, and shuts down executors.
+     * Stops the Pub/Sub listener thread (if running) and closes the pool.
+     * <p>
+     * The worker pools in {@link RedisExecutors} are process-wide and shared with any instance
+     * generated after this one, so they are deliberately left running. Call
+     * {@link RedisExecutors#shutdown()} when your application itself is going away.
      */
     public void shutdown() {
         if (subscriberThread != null) {
@@ -251,8 +255,6 @@ public class RedisAPI {
             } catch (Exception ignored) {
             }
         }
-
-        executorService.shutdownNow();
     }
 
 
@@ -264,13 +266,7 @@ public class RedisAPI {
      * @return CompletableFuture<Void> representing the asynchronous operation
      */
     public CompletableFuture<Void> publishMessage(RedisChannel channel, String message) {
-        return CompletableFuture.runAsync(() -> {
-            try {
-                pool.publish(channel.channelName, "none" + ";" + message);
-            } catch (Exception ex) {
-                throw new MessageFailureException("Failed to send message to redis", ex);
-            }
-        }, executorService);
+        return publish(channel.channelName, "none" + ";" + message);
     }
 
     /**
@@ -283,13 +279,32 @@ public class RedisAPI {
      * @return CompletableFuture<Void> representing the asynchronous operation
      */
     public CompletableFuture<Void> publishMessage(String filterId, RedisChannel channel, String message) {
-        return CompletableFuture.runAsync(() -> {
-            try {
-                pool.publish(channel.channelName, filterId + ";" + message);
-            } catch (Exception ex) {
-                throw new MessageFailureException("Failed to send message to redis", ex);
-            }
-        }, executorService);
+        return publish(channel.channelName, filterId + ";" + message);
+    }
+
+    /**
+     * Completes the returned future on every path, including a rejected submission. The publisher
+     * pool aborts rather than dropping precisely so this can happen: a future that silently never
+     * completes would strand whatever the caller chained onto it - for {@link DataRequest} that
+     * means a pending entry that is never cleaned up.
+     */
+    private CompletableFuture<Void> publish(String channelName, String payload) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+
+        try {
+            executorService.execute(() -> {
+                try {
+                    pool.publish(channelName, payload);
+                    future.complete(null);
+                } catch (Throwable ex) {
+                    future.completeExceptionally(new MessageFailureException("Failed to send message to redis", ex));
+                }
+            });
+        } catch (Throwable ex) {
+            future.completeExceptionally(new MessageFailureException("Failed to queue message for redis", ex));
+        }
+
+        return future;
     }
 
     /**
