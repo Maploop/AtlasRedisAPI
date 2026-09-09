@@ -1,109 +1,135 @@
 package net.swofty.redisapi.api;
 
+import org.jetbrains.annotations.ApiStatus;
+
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.RejectedExecutionHandler;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
 /**
- * Owns every thread the Redis layer uses. All queues are bounded and all threads are named
- * daemons, so a saturated pool degrades visibly instead of growing without limit.
+ * Owns every worker thread the Redis layer uses. Queues are bounded and threads are named daemons
+ * that exit after a minute idle. A pool that is saturated or already shut down never discards
+ * work: the task runs on the thread that submitted it instead, so overload degrades into
+ * back-pressure rather than silent loss.
  * <p>
- * The pools are process-wide and outlive any single {@link RedisAPI} instance, so
- * {@link RedisAPI#shutdown()} leaves them running. Call {@link #shutdown()} yourself when your
- * application is tearing down and wants the threads gone before the JVM exits.
+ * Pools are created lazily on first use and torn down by {@link RedisAPI#shutdown()}. An instance
+ * generated after that simply gets a fresh set on its first use.
  */
+@ApiStatus.Internal
 public final class RedisExecutors {
     private static final Logger LOGGER = Logger.getLogger(RedisExecutors.class.getName());
 
     private static final int QUEUE_CAPACITY = 2_000;
     private static final int DISPATCH_STRIPES = 8;
+    private static final long WARN_INTERVAL_MS = 5_000;
 
-    private static final ExecutorService[] DISPATCH = new ExecutorService[DISPATCH_STRIPES];
-
-    // Envelope work for the internal data request channel only, which never blocks.
-    public static final ExecutorService INBOUND = pool("atlas-redis-inbound", 4, dropPolicy("inbound"));
-
-    // Responder callbacks, which are allowed to stall as long as they'd like (under 8s)
-    public static final ExecutorService HANDLERS = pool("atlas-redis-handler", 32, dropPolicy("handler"));
-
-    /**
-     * Stages of the futures handed out by {@code DataRequest}. Runs on the caller rather than
-     * dropping, because a dropped stage would leave a caller's future incomplete forever. Safe
-     * only because the subscriber thread never submits here.
-     */
-    public static final ExecutorService COMPLETIONS =
-            pool("atlas-redis-completion", 16, new ThreadPoolExecutor.CallerRunsPolicy());
-
-    // Publishes. Aborts rather than drops so the caller can fail its future.
-    public static final ExecutorService PUBLISHER =
-            pool("atlas-redis-publisher", 24, new ThreadPoolExecutor.AbortPolicy());
-
-    public static final ScheduledExecutorService SCHEDULER = scheduler();
-
-    static {
-        for (int i = 0; i < DISPATCH_STRIPES; i++)
-            DISPATCH[i] = pool("atlas-redis-dispatch-" + i, 1, dropPolicy("dispatch"));
-    }
+    private static volatile Pools pools;
 
     private RedisExecutors() { }
 
     /**
      * The single-threaded stripe a channel's messages are handled on. Every message for a given
      * channel lands on the same stripe, which keeps per-channel FIFO ordering without serialising
-     * unrelated channels behind each other.
+     * every channel behind each other.
      *
      * @param channelName the name of the channel the message arrived on
      * @return the executor that channel's handlers run on
      */
     public static ExecutorService dispatchFor(String channelName) {
-        return DISPATCH[Math.floorMod(channelName.hashCode(), DISPATCH_STRIPES)];
+        return pools().dispatch[Math.floorMod(channelName.hashCode(), DISPATCH_STRIPES)];
     }
 
-    public static void submit(ExecutorService executor, String what, Runnable task) {
-        try {
-            executor.execute(task);
-        } catch (RejectedExecutionException ignored) {
-            LOGGER.warning("Redis " + what + " pool rejected a task.");
-        }
+    /** Envelope work for the internal data request channel, which never blocks. */
+    public static ExecutorService inbound() {
+        return pools().inbound;
+    }
+
+    /** {@code DataRequestResponder} callbacks, which may block on IO. */
+    public static ExecutorService handlers() {
+        return pools().handlers;
+    }
+
+    /** Stages of the futures handed out by {@code DataRequest} and {@code publishMessage}. */
+    public static ExecutorService completions() {
+        return pools().completions;
+    }
+
+    /** Outbound publishes. */
+    public static ExecutorService publisher() {
+        return pools().publisher;
     }
 
     /**
-     * Stops every pool. Intended for application shutdown; the pools cannot be restarted
-     * afterwards, so a {@link RedisAPI} generated after this call has nowhere to publish.
+     * Stops accepting new work on the current pools and lets queued work drain. Anything
+     * submitted afterwards runs on the submitting thread until a later call creates fresh pools.
      */
     public static void shutdown() {
-        for (ExecutorService stripe : DISPATCH)
-            stripe.shutdownNow();
-
-        INBOUND.shutdownNow();
-        HANDLERS.shutdownNow();
-        COMPLETIONS.shutdownNow();
-        PUBLISHER.shutdownNow();
-        SCHEDULER.shutdownNow();
+        Pools current;
+        synchronized (RedisExecutors.class) {
+            current = pools;
+            pools = null;
+        }
+        if (current != null)
+            current.shutdown();
     }
 
-    private static ExecutorService pool(String name, int threads, RejectedExecutionHandler policy) {
-        return new ThreadPoolExecutor(threads, threads, 60, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(QUEUE_CAPACITY), factory(name, threads > 1), policy);
+    private static Pools pools() {
+        Pools current = pools;
+        if (current == null) {
+            synchronized (RedisExecutors.class) {
+                current = pools;
+                if (current == null)
+                    pools = current = new Pools();
+            }
+        }
+        return current;
     }
 
-    private static ScheduledExecutorService scheduler() {
-        ScheduledThreadPoolExecutor executor =
-                new ScheduledThreadPoolExecutor(4, factory("atlas-redis-scheduler", true));
-        executor.setRemoveOnCancelPolicy(true);
+    private static final class Pools {
+        final ExecutorService[] dispatch = new ExecutorService[DISPATCH_STRIPES];
+        final ExecutorService inbound = pool("atlas-redis-inbound", 4);
+        final ExecutorService handlers = pool("atlas-redis-handler", 32);
+        final ExecutorService completions = pool("atlas-redis-completion", 16);
+        final ExecutorService publisher = pool("atlas-redis-publisher", 24);
+
+        Pools() {
+            for (int i = 0; i < DISPATCH_STRIPES; i++)
+                dispatch[i] = pool("atlas-redis-dispatch-" + i, 1);
+        }
+
+        void shutdown() {
+            for (ExecutorService stripe : dispatch)
+                stripe.shutdown();
+            inbound.shutdown();
+            handlers.shutdown();
+            completions.shutdown();
+            publisher.shutdown();
+        }
+    }
+
+    private static ExecutorService pool(String name, int threads) {
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(threads, threads, 60, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(QUEUE_CAPACITY), factory(name, threads > 1), runOnCaller(name));
+        executor.allowCoreThreadTimeOut(true);
         return executor;
     }
 
-    private static RejectedExecutionHandler dropPolicy(String label) {
-        return (task, executor) -> LOGGER.warning("Redis " + label + " pool is saturated, dropped a task.");
+    private static RejectedExecutionHandler runOnCaller(String name) {
+        AtomicLong lastWarning = new AtomicLong();
+        return (task, executor) -> {
+            long now = System.currentTimeMillis();
+            long last = lastWarning.get();
+            if (now - last >= WARN_INTERVAL_MS && lastWarning.compareAndSet(last, now))
+                LOGGER.warning("Redis pool " + name + " is " + (executor.isShutdown() ? "shut down" : "saturated")
+                        + ", running work on the submitting thread instead.");
+            task.run();
+        };
     }
 
     private static ThreadFactory factory(String name, boolean numbered) {
