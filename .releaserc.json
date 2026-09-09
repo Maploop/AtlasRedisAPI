@@ -18,8 +18,7 @@
       {
         "assets": [
           {
-            "path": "build/libs/*.jar",
-            "label": "AtlasRedisAPI"
+            "path": "build/libs/*.jar"
           }
         ]
       }
