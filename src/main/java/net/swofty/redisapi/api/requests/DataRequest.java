@@ -2,6 +2,7 @@ package net.swofty.redisapi.api.requests;
 
 import net.swofty.redisapi.api.ChannelRegistry;
 import net.swofty.redisapi.api.RedisAPI;
+import net.swofty.redisapi.api.RedisExecutors;
 import net.swofty.redisapi.util.RedisParsableMessage;
 import org.jetbrains.annotations.Nullable;
 import org.json.JSONObject;
@@ -13,6 +14,16 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 public class DataRequest {
+    /**
+     * The internal channel every request and response travels over. Registered automatically by
+     * {@link RedisAPI#startListeners()}.
+     */
+    public static final String CHANNEL = "internal-data-request";
+
+    /**
+     * How long to wait for a response, measured from the moment the request actually reaches Redis
+     * rather than from the {@link #await()} call.
+     */
     private static final long TIMEOUT_MS = 1_000;
 
     private static final Map<String, CompletableFuture<JSONObject>> PENDING = new ConcurrentHashMap<>();
@@ -55,12 +66,25 @@ public class DataRequest {
         request.put("data", data);
         request.put("sender", RedisAPI.getInstance().getFilterId()); // We assume your FilterID is set before using this.
         request.put("stream", StreamType.REQUEST.name());
-        RedisAPI.getInstance().publishMessage(filter, ChannelRegistry.getFromName("internal-data-request"), RedisParsableMessage.build(request).formatForSend());
 
-        return responseFuture
-                .completeOnTimeout(null, TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                .thenApply(response -> new DataResponse(response, System.currentTimeMillis() - start))
-                .whenComplete((response, error) -> PENDING.remove(id)); // cleanup either way - success or timeout
+        return RedisAPI.getInstance()
+                .publishMessage(filter, ChannelRegistry.getFromName(CHANNEL),
+                        RedisParsableMessage.build(request).formatForSend())
+                // The timeout is armed only once the publish has reached Redis. Arming it at call
+                // time billed connection queueing against the response budget, so a busy server
+                // timed out requests the remote end had not even seen yet.
+                .thenComposeAsync(
+                        ignored -> responseFuture.completeOnTimeout(null, TIMEOUT_MS, TimeUnit.MILLISECONDS),
+                        RedisExecutors.completions())
+                // handleAsync, not whenComplete: it also turns a failed publish into a null
+                // response, so a request that never left the box fails fast instead of waiting
+                // out the full timeout. Cleanup happens on every path, and the caller's
+                // continuations run on a dedicated pool rather than inline on the thread that
+                // read the response off Redis.
+                .handleAsync((response, error) -> {
+                    PENDING.remove(id);
+                    return new DataResponse(response, System.currentTimeMillis() - start);
+                }, RedisExecutors.completions());
     }
 
     /**

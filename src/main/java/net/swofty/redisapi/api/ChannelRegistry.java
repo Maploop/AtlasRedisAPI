@@ -5,12 +5,13 @@ import net.swofty.redisapi.exceptions.ChannelAlreadyRegisteredException;
 import net.swofty.redisapi.exceptions.ChannelNotRegisteredException;
 import lombok.NonNull;
 
-import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 @UtilityClass
 public class ChannelRegistry {
 
-      public ArrayList<RedisChannel> registeredChannels = new ArrayList<>();
+      public List<RedisChannel> registeredChannels = new CopyOnWriteArrayList<>();
 
       /**
        * Used to receive a channel that has already been registered
@@ -24,7 +25,7 @@ public class ChannelRegistry {
 //            return registeredChannels.stream().filter(channel -> Objects.equals(channel.channelName, channelName)).findFirst().orElseThrow(() -> new ChannelNotRegisteredException("There is no channel registered with the name '" + channelName + "'"));
       }
 
-      public void registerChannel(RedisChannel channel) {
+      public synchronized void registerChannel(RedisChannel channel) {
             if (registeredChannels.stream().anyMatch(channel2 -> channel2.channelName.equals(channel.channelName)))
                   throw new ChannelAlreadyRegisteredException("A channel already exists with this name '" + channel.channelName + "'");
 

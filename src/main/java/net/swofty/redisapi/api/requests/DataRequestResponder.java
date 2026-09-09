@@ -2,12 +2,12 @@ package net.swofty.redisapi.api.requests;
 
 import org.json.JSONObject;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 public class DataRequestResponder {
-    public static final Map<String, DataRequestResponder> RESPONDERS = new HashMap<>();
+    public static final Map<String, DataRequestResponder> RESPONDERS = new ConcurrentHashMap<>();
 
     private final Function<JSONObject, JSONObject> callback;
 
