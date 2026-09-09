@@ -40,7 +40,7 @@ AtlasRedisAPI is published to [GitHub Packages](https://github.com/Swofty-Develo
 <dependencies>
     <dependency>
         <groupId>net.swofty</groupId>
-        <artifactId>AtlasRedisAPI</artifactId>
+        <artifactId>atlasredisapi</artifactId>
         <version>1.2.0</version>
     </dependency>
 </dependencies>
@@ -74,7 +74,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'net.swofty:AtlasRedisAPI:1.2.0'
+    implementation 'net.swofty:atlasredisapi:1.2.0'
 }
 ```
 </details>
