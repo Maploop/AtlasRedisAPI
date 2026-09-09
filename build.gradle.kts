@@ -23,7 +23,7 @@ dependencies {
 
     compileOnly("org.jetbrains:annotations:26.0.2")
 
-    implementation("redis.clients:jedis:7.2.0")
+    implementation("redis.clients:jedis:7.5.3")
 
     testImplementation(platform("org.junit:junit-bom:5.13.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
