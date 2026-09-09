@@ -1,5 +1,6 @@
 plugins {
     java
+    `maven-publish`
 }
 
 group = "net.swofty"
@@ -9,6 +10,7 @@ java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(25))
     }
+    withSourcesJar()
 }
 
 repositories {
@@ -50,4 +52,35 @@ tasks.register("printVersion") {
 tasks.jar {
     archiveVersion.set(project.version.toString())
     archiveClassifier.set("")
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            groupId = "net.swofty"
+            artifactId = "AtlasRedisAPI"
+            from(components["java"])
+            pom {
+                name.set("AtlasRedisAPI")
+                description.set("Simple but blazingly fast all-purpose Redis API")
+                url.set("https://github.com/Swofty-Developments/AtlasRedisAPI")
+                licenses {
+                    license {
+                        name.set("MIT")
+                        url.set("https://github.com/Swofty-Developments/AtlasRedisAPI/blob/master/LICENSE.txt")
+                    }
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/Swofty-Developments/AtlasRedisAPI")
+            credentials {
+                username = project.findProperty("gpr.user") as String? ?: System.getenv("GITHUB_ACTOR")
+                password = project.findProperty("gpr.key") as String? ?: System.getenv("GITHUB_TOKEN")
+            }
+        }
+    }
 }
