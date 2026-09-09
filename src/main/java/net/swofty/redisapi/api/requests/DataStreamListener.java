@@ -36,8 +36,7 @@ public class DataStreamListener implements RedisMessagingReceiveInterface {
                 // Responders are free to hit the database or wait on a round trip, so they get
                 // their own pool rather than running on the thread that read the message.
                 JSONObject requestData = data == null ? new JSONObject() : data;
-                RedisExecutors.submit(RedisExecutors.HANDLERS, "handler",
-                        () -> respond(responder, key, id, requestData, sender));
+                RedisExecutors.handlers().execute(() -> respond(responder, key, id, requestData, sender));
             }
             // A null payload stays null so callers keep seeing it as a failed request.
             case RESPONSE -> DataRequest.receive(id, data);
@@ -64,6 +63,10 @@ public class DataStreamListener implements RedisMessagingReceiveInterface {
             responseJson.put("data", response);
 
         RedisAPI.getInstance().publishMessage(sender, ChannelRegistry.getFromName(DataRequest.CHANNEL),
-                RedisParsableMessage.build(responseJson).formatForSend());
+                        RedisParsableMessage.build(responseJson).formatForSend())
+                .exceptionally(error -> {
+                    LOGGER.log(Level.SEVERE, "Failed to publish data request response for key " + key, error);
+                    return null;
+                });
     }
 }

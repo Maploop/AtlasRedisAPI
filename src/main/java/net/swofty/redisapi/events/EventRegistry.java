@@ -19,7 +19,7 @@ public class EventRegistry {
 
       private static final Logger LOGGER = Logger.getLogger(EventRegistry.class.getName());
 
-      public static JedisPubSub pubSub = null;
+      public static volatile JedisPubSub pubSub = null;
 
       /**
        * Entry point for the subscriber thread. Does the filter check and then hands the message to a
@@ -33,9 +33,9 @@ public class EventRegistry {
             // Correlation ids make ordering irrelevant for data requests, so they run fully
             // parallel. Everything else is striped by channel name to keep per-channel FIFO.
             if (DataRequest.CHANNEL.equals(channel))
-                  RedisExecutors.submit(RedisExecutors.INBOUND, "inbound", () -> run(channel, message));
+                  RedisExecutors.inbound().execute(() -> run(channel, message));
             else
-                  RedisExecutors.submit(RedisExecutors.dispatchFor(channel), "dispatch", () -> run(channel, message));
+                  RedisExecutors.dispatchFor(channel).execute(() -> run(channel, message));
       }
 
       private static void run(String channel, String message) {
@@ -46,10 +46,6 @@ public class EventRegistry {
             }
       }
 
-      /**
-       * Equivalent to the {@code message.split(";")[0]} comparison below without allocating an
-       * array for every message that arrives.
-       */
       private static boolean matchesFilter(String message) {
             if (message == null) {
                   LOGGER.warning("Received a null Redis message, dropping it.");

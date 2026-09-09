@@ -26,9 +26,6 @@ public class DataRequest {
      */
     private static final long TIMEOUT_MS = 1_000;
 
-    /** Slack on top of the timeout for the backstop that clears abandoned pending entries. */
-    private static final long PUBLISH_GRACE_MS = 5_000;
-
     private static final Map<String, CompletableFuture<JSONObject>> PENDING = new ConcurrentHashMap<>();
 
     private final String id;
@@ -70,14 +67,6 @@ public class DataRequest {
         request.put("sender", RedisAPI.getInstance().getFilterId()); // We assume your FilterID is set before using this.
         request.put("stream", StreamType.REQUEST.name());
 
-        // Backstop independent of the pools below: however the chain behaves, this entry leaves
-        // the map. Without it a dropped publish or completion stage would strand it forever.
-        RedisExecutors.SCHEDULER.schedule(() -> {
-            CompletableFuture<JSONObject> abandoned = PENDING.remove(id);
-            if (abandoned != null)
-                abandoned.complete(null);
-        }, TIMEOUT_MS + PUBLISH_GRACE_MS, TimeUnit.MILLISECONDS);
-
         return RedisAPI.getInstance()
                 .publishMessage(filter, ChannelRegistry.getFromName(CHANNEL),
                         RedisParsableMessage.build(request).formatForSend())
@@ -86,7 +75,7 @@ public class DataRequest {
                 // timed out requests the remote end had not even seen yet.
                 .thenComposeAsync(
                         ignored -> responseFuture.completeOnTimeout(null, TIMEOUT_MS, TimeUnit.MILLISECONDS),
-                        RedisExecutors.COMPLETIONS)
+                        RedisExecutors.completions())
                 // handleAsync, not whenComplete: it also turns a failed publish into a null
                 // response, so a request that never left the box fails fast instead of waiting
                 // out the full timeout. Cleanup happens on every path, and the caller's
@@ -95,7 +84,7 @@ public class DataRequest {
                 .handleAsync((response, error) -> {
                     PENDING.remove(id);
                     return new DataResponse(response, System.currentTimeMillis() - start);
-                }, RedisExecutors.COMPLETIONS);
+                }, RedisExecutors.completions());
     }
 
     /**

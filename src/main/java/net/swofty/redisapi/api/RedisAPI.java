@@ -21,7 +21,6 @@ import redis.clients.jedis.JedisPubSub;
 
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -33,8 +32,6 @@ public class RedisAPI {
     private static final String REDIS_FULL_URI_PATTERN = "rediss?://(?:(?<user>\\w+)?:(?<password>[\\w-]+)@)?(?<host>[\\w.-]+):(?<port>\\d+)";
     private static final String REDIS_URI_PATTERN = "rediss?://[\\w.-]+:\\d+";
     private static final Duration DEFAULT_REDIS_TIMEOUT = Duration.ofSeconds(2);
-
-    private final ExecutorService executorService = RedisExecutors.PUBLISHER;
 
     @Getter
     private static RedisAPI instance = null;
@@ -224,11 +221,8 @@ public class RedisAPI {
     }
 
     /**
-     * Stops the Pub/Sub listener thread (if running) and closes the pool.
-     * <p>
-     * The worker pools in {@link RedisExecutors} are process-wide and shared with any instance
-     * generated after this one, so they are deliberately left running. Call
-     * {@link RedisExecutors#shutdown()} when your application itself is going away.
+     * Stops the Pub/Sub listener thread (if running), closes the pool, and shuts down the worker
+     * pools. Work already queued on the workers is allowed to finish.
      */
     public void shutdown() {
         if (subscriberThread != null) {
@@ -255,6 +249,8 @@ public class RedisAPI {
             } catch (Exception ignored) {
             }
         }
+
+        RedisExecutors.shutdown();
     }
 
 
@@ -263,7 +259,7 @@ public class RedisAPI {
      *
      * @param channel the channel object being published to, this is what should be registered on your other instances
      * @param message the message being sent across that channel
-     * @return CompletableFuture<Void> representing the asynchronous operation
+     * @return a {@code CompletableFuture<Void>} representing the asynchronous operation
      */
     public CompletableFuture<Void> publishMessage(RedisChannel channel, String message) {
         return publish(channel.channelName, "none" + ";" + message);
@@ -276,23 +272,22 @@ public class RedisAPI {
      *                 to ensure that only a specific Jedis pool handles the message
      * @param channel  the channel object being published to, this is what should be registered on your other instances
      * @param message  the message being sent across that channel
-     * @return CompletableFuture<Void> representing the asynchronous operation
+     * @return a {@code CompletableFuture<Void>} representing the asynchronous operation
      */
     public CompletableFuture<Void> publishMessage(String filterId, RedisChannel channel, String message) {
         return publish(channel.channelName, filterId + ";" + message);
     }
 
     /**
-     * Completes the returned future on every path, including a rejected submission. The publisher
-     * pool aborts rather than dropping precisely so this can happen: a future that silently never
-     * completes would strand whatever the caller chained onto it - for {@link DataRequest} that
-     * means a pending entry that is never cleaned up.
+     * Completes the returned future on every path. A future that silently never completes would
+     * strand whatever the caller chained onto it - for {@link DataRequest} that means a pending
+     * entry that is never cleaned up.
      */
     private CompletableFuture<Void> publish(String channelName, String payload) {
         CompletableFuture<Void> future = new CompletableFuture<>();
 
         try {
-            executorService.execute(() -> {
+            RedisExecutors.publisher().execute(() -> {
                 try {
                     pool.publish(channelName, payload);
                     future.complete(null);

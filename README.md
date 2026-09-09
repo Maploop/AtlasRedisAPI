@@ -17,7 +17,6 @@ Used by Atlas Network. Simple but blazingly fast all-purpose Redis API. Perfect 
 * [Sending messages to a specific server](#subscribing-to-a-specific-server)
 * [Publishing messages](#publishing-messages)
 * [Events & incoming messages](#events--incoming-messages)
-* [Threading](#threading)
 * [License](#license)
 
 ## Getting started
@@ -146,23 +145,6 @@ public class ExampleListener implements RedisMessagingReceiveInterface {
     }
 }
 
-```
-
-## Threading
-
-Every thread the API uses is owned by `RedisExecutors`. The subscriber connection has one thread for the whole process, so it never runs your code - it only does the filter-ID check and hands the message to a worker:
-
-* messages are striped across 8 single-threaded dispatch pools by channel name, so each channel keeps FIFO ordering without waiting behind unrelated channels
-* `DataRequest` traffic skips the striping and runs fully parallel (correlation IDs make ordering irrelevant), and `DataRequestResponder` callbacks get their own pool - they are free to hit a database or wait on a round trip
-* publishes and the stages of the futures returned by `publishMessage` / `DataRequest#await` run on their own pools, so nothing a caller chains onto a future can stall Redis traffic
-
-All queues are bounded and all threads are daemons, so a saturated pool logs and drops instead of growing without limit.
-
-`RedisAPI#shutdown()` stops the subscriber and closes the connection but leaves these pools running, since they are shared with any instance you generate afterwards. When your application itself is going away:
-
-```java
-RedisAPI.getInstance().shutdown();
-RedisExecutors.shutdown(); // optional - the threads are daemons, so the JVM can exit either way
 ```
 
 ## License
