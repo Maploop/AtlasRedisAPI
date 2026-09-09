@@ -1,0 +1,5 @@
+net.swofty.redisapi.api
+net.swofty.redisapi.api.requests
+net.swofty.redisapi.events
+net.swofty.redisapi.exceptions
+net.swofty.redisapi.util
