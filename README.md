@@ -1,5 +1,6 @@
 # Atlas Redis API
 ![badge](https://img.shields.io/github/v/release/Swofty-Developments/AtlasRedisAPI)
+[![badge](https://img.shields.io/maven-central/v/net.swofty/AtlasRedisAPI)](https://central.sonatype.com/artifact/net.swofty/AtlasRedisAPI)
 ![badge](https://img.shields.io/github/last-commit/Swofty-Developments/AtlasRedisAPI)
 [![badge](https://img.shields.io/discord/830345347867476000?label=discord)](https://discord.gg/atlasmc)
 [![badge](https://img.shields.io/github/license/Swofty-Developments/AtlasRedisAPI)](https://github.com/Swofty-Developments/AtlasRedisAPI/blob/master/LICENSE.txt)
@@ -24,38 +25,17 @@ This API is intended for stand-alone usage, meaning that you do not need to run 
 
 ### Add AtlasRedisAPI to your project 
 
-AtlasRedisAPI is published to [GitHub Packages](https://github.com/Swofty-Developments/AtlasRedisAPI/packages). GitHub requires authentication to download packages, even public ones, so create a [personal access token](https://github.com/settings/tokens) with the `read:packages` scope and use it as the password below.
+AtlasRedisAPI is published to [Maven Central](https://central.sonatype.com/artifact/net.swofty/AtlasRedisAPI), so no extra repository is needed.
 
 <details>
     <summary>Maven</summary>
 
 ```xml
-<repositories>
-    <repository>
-        <id>github</id>
-        <url>https://maven.pkg.github.com/Swofty-Developments/AtlasRedisAPI</url>
-    </repository>
-</repositories>
-
-<dependencies>
-    <dependency>
-        <groupId>net.swofty</groupId>
-        <artifactId>atlasredisapi</artifactId>
-        <version>1.2.0</version>
-    </dependency>
-</dependencies>
-```
-
-Then add your credentials to `~/.m2/settings.xml`:
-
-```xml
-<servers>
-    <server>
-        <id>github</id>
-        <username>YOUR_GITHUB_USERNAME</username>
-        <password>YOUR_TOKEN</password>
-    </server>
-</servers>
+<dependency>
+    <groupId>net.swofty</groupId>
+    <artifactId>AtlasRedisAPI</artifactId>
+    <version>1.2.0</version>
+</dependency>
 ```
 </details>
 
@@ -63,18 +43,8 @@ Then add your credentials to `~/.m2/settings.xml`:
     <summary>Gradle</summary>
 
 ```gradle
-repositories {
-    maven {
-        url 'https://maven.pkg.github.com/Swofty-Developments/AtlasRedisAPI'
-        credentials {
-            username = project.findProperty('gpr.user') ?: System.getenv('GITHUB_USERNAME')
-            password = project.findProperty('gpr.key') ?: System.getenv('GITHUB_TOKEN')
-        }
-    }
-}
-
 dependencies {
-    implementation 'net.swofty:atlasredisapi:1.2.0'
+    implementation 'net.swofty:AtlasRedisAPI:1.2.0'
 }
 ```
 </details>
