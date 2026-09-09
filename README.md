@@ -1,11 +1,10 @@
 # Atlas Redis API
 ![badge](https://img.shields.io/github/v/release/Swofty-Developments/AtlasRedisAPI)
-[![badge](https://jitpack.io/v/Swofty-Developments/AtlasRedisAPI.svg)](https://jitpack.io/#Swofty-Developments/AtlasRedisAPI)
 ![badge](https://img.shields.io/github/last-commit/Swofty-Developments/AtlasRedisAPI)
 [![badge](https://img.shields.io/discord/830345347867476000?label=discord)](https://discord.gg/atlasmc)
 [![badge](https://img.shields.io/github/license/Swofty-Developments/AtlasRedisAPI)](https://github.com/Swofty-Developments/AtlasRedisAPI/blob/master/LICENSE.txt)
 
-**[JavaDoc 1.0.3](https://swofty-developments.github.io/AtlasRedisAPI/)**
+**[JavaDoc 1.2.0](https://swofty-developments.github.io/AtlasRedisAPI/)**
 
 Used by Atlas Network. Simple but blazingly fast all-purpose Redis API. Perfect for use in JSP, Minecraft, Server Backends or just about anything else!
 
@@ -25,9 +24,7 @@ This API is intended for stand-alone usage, meaning that you do not need to run 
 
 ### Add AtlasRedisAPI to your project 
 
-[![badge](https://jitpack.io/v/Swofty-Developments/AtlasRedisAPI.svg)](https://jitpack.io/#Swofty-Developments/AtlasRedisAPI)
-
-First, you need to setup the dependency on the AtlasRedisAPI. Replace **VERSION** with the version of the release.
+AtlasRedisAPI is published to [GitHub Packages](https://github.com/Swofty-Developments/AtlasRedisAPI/packages). GitHub requires authentication to download packages, even public ones, so create a [personal access token](https://github.com/settings/tokens) with the `read:packages` scope and use it as the password below.
 
 <details>
     <summary>Maven</summary>
@@ -35,18 +32,30 @@ First, you need to setup the dependency on the AtlasRedisAPI. Replace **VERSION*
 ```xml
 <repositories>
     <repository>
-        <id>jitpack.io</id>
-        <url>https://jitpack.io</url>
+        <id>github</id>
+        <url>https://maven.pkg.github.com/Swofty-Developments/AtlasRedisAPI</url>
     </repository>
 </repositories>
 
 <dependencies>
     <dependency>
-        <groupId>com.github.Swofty-Developments</groupId>
+        <groupId>net.swofty</groupId>
         <artifactId>AtlasRedisAPI</artifactId>
-        <version>VERSION</version>
+        <version>1.2.0</version>
     </dependency>
 </dependencies>
+```
+
+Then add your credentials to `~/.m2/settings.xml`:
+
+```xml
+<servers>
+    <server>
+        <id>github</id>
+        <username>YOUR_GITHUB_USERNAME</username>
+        <password>YOUR_TOKEN</password>
+    </server>
+</servers>
 ```
 </details>
 
@@ -54,15 +63,18 @@ First, you need to setup the dependency on the AtlasRedisAPI. Replace **VERSION*
     <summary>Gradle</summary>
 
 ```gradle
-allprojects {
-    repositories {
-        ...
-        maven { url 'https://jitpack.io' }
+repositories {
+    maven {
+        url 'https://maven.pkg.github.com/Swofty-Developments/AtlasRedisAPI'
+        credentials {
+            username = project.findProperty('gpr.user') ?: System.getenv('GITHUB_USERNAME')
+            password = project.findProperty('gpr.key') ?: System.getenv('GITHUB_TOKEN')
+        }
     }
 }
 
 dependencies {
-    implementation 'com.github.Swofty-Developments:AtlasRedisAPI:VERSION'
+    implementation 'net.swofty:AtlasRedisAPI:1.2.0'
 }
 ```
 </details>
