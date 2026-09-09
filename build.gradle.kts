@@ -1,6 +1,7 @@
 plugins {
     java
     `maven-publish`
+    signing
 }
 
 group = "net.swofty"
@@ -11,6 +12,7 @@ java {
         languageVersion.set(JavaLanguageVersion.of(25))
     }
     withSourcesJar()
+    withJavadocJar()
 }
 
 repositories {
@@ -57,30 +59,42 @@ tasks.jar {
 publishing {
     publications {
         create<MavenPublication>("maven") {
-            groupId = "net.swofty"
-            artifactId = "atlasredisapi"
             from(components["java"])
+            groupId = "net.swofty"
+            artifactId = "AtlasRedisAPI"
+
             pom {
                 name.set("AtlasRedisAPI")
                 description.set("Simple but blazingly fast all-purpose Redis API")
                 url.set("https://github.com/Swofty-Developments/AtlasRedisAPI")
                 licenses {
                     license {
-                        name.set("MIT")
+                        name.set("MIT License")
                         url.set("https://github.com/Swofty-Developments/AtlasRedisAPI/blob/master/LICENSE.txt")
                     }
+                }
+                developers {
+                    developer {
+                        id.set("swofty")
+                        name.set("Swofty")
+                        url.set("https://github.com/Swofty-Developments")
+                    }
+                }
+                scm {
+                    connection.set("scm:git:git://github.com/Swofty-Developments/AtlasRedisAPI.git")
+                    developerConnection.set("scm:git:ssh://github.com/Swofty-Developments/AtlasRedisAPI.git")
+                    url.set("https://github.com/Swofty-Developments/AtlasRedisAPI")
                 }
             }
         }
     }
-    repositories {
-        maven {
-            name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/Swofty-Developments/AtlasRedisAPI")
-            credentials {
-                username = project.findProperty("gpr.user") as String? ?: System.getenv("GITHUB_ACTOR")
-                password = project.findProperty("gpr.key") as String? ?: System.getenv("GITHUB_TOKEN")
-            }
-        }
+}
+
+signing {
+    val signingKey = System.getenv("GPG_SIGNING_KEY")
+    val signingPassword = System.getenv("GPG_SIGNING_PASSWORD")
+    if (!signingKey.isNullOrEmpty() && !signingPassword.isNullOrEmpty()) {
+        useInMemoryPgpKeys(signingKey, signingPassword)
+        sign(publishing.publications["maven"])
     }
 }
